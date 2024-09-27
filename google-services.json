@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "656034457381",
+    "project_id": "sugarfit-ba5df",
+    "storage_bucket": "sugarfit-ba5df.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:656034457381:android:5b79f8ef323722a5a45ccc",
+        "android_client_info": {
+          "package_name": "com.sugarfit"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBGU0se_MLtlGA9q2zEi1hnKhlSt_XCAt4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
