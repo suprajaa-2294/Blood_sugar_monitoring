@@ -1,103 +1,181 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Button, Alert, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, Image, ScrollView, Dimensions, ActivityIndicator, TouchableOpacity, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { signOut } from 'firebase/auth';
 import { auth } from './firebase';
-import { LineChart } from 'react-native-chart-kit'; // Import LineChart
-import { Dimensions, ScrollView } from 'react-native'; // Import ScrollView for scrollable content
+import { LineChart } from 'react-native-chart-kit';
+import axios from 'axios';
+import moment from 'moment'; // Import moment.js for date formatting
 
 export default function Home() {
-  const navigation = useNavigation();
-
+  const navigation = useNavigation(); // React Navigation hook
   const [glucoseData, setGlucoseData] = useState([]);
+  const [timestamps, setTimestamps] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [prediction, setPrediction] = useState({
+    last_glucose_value: null,
+    prediction_before: null,
+    prediction_after: null,
+  });
+
+  // Prediction Logic Based on Ranges
+  const getPrediction = (glucoseValue) => {
+    let prediction_before;
+    let prediction_after;
+
+    // Prediction for fasting blood sugar (before meal)
+    if (glucoseValue < 54) {
+      prediction_before = "Severe Hypoglycemia";
+    } else if (glucoseValue >= 54 && glucoseValue < 70) {
+      prediction_before = "Mild Hypoglycemia";
+    } else if (glucoseValue >= 70 && glucoseValue < 100) {
+      prediction_before = "Normal";
+    } else if (glucoseValue >= 100 && glucoseValue < 126) {
+      prediction_before = "Pre-Diabetes";
+    } else {
+      prediction_before = "Hyperglycemia";
+    }
+
+    // Prediction for 2 hours after eating
+    if (glucoseValue < 140) {
+      prediction_after = "Normal";
+    } else if (glucoseValue >= 140 && glucoseValue < 200) {
+      prediction_after = "Pre-Diabetes";
+    } else {
+      prediction_after = "Hyperglycemia";
+    }
+
+    return { prediction_before, prediction_after };
+  };
+
+  // Fetch Glucose Data
+  const fetchGlucoseData = async () => {
+    const CHANNEL_ID = '2653936';
+    const READ_API_KEY = 'VOX5AWN9N3FW9NHB';
+    const FIELD_NUMBER = 1;
+
+    const url = `https://api.thingspeak.com/channels/${CHANNEL_ID}/fields/${FIELD_NUMBER}.json?api_key=${READ_API_KEY}&results=100`;
+
+    try {
+      const response = await axios.get(url);
+      const feeds = response.data.feeds;
+      const data = feeds.map(feed => parseFloat(feed.field1));
+      const timestamps = feeds.map(feed => moment(feed.created_at).format('MMM D, YYYY h:mm A'));
+
+      setGlucoseData(data);
+      setTimestamps(timestamps);
+      console.log('Fetched glucose data:', data);
+
+      const lastGlucoseValue = data[data.length - 1];
+      const { prediction_before, prediction_after } = getPrediction(lastGlucoseValue);
+
+      setPrediction({
+        last_glucose_value: lastGlucoseValue,
+        prediction_before,
+        prediction_after,
+      });
+    } catch (error) {
+      console.error('Error fetching glucose data:', error);
+      Alert.alert('Error', 'Unable to fetch glucose data. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
-    // Generate random glucose data for the graph
-    const generateRandomData = () => {
-      let data = [];
-      for (let i = 0; i < 12; i++) {
-        data.push(Math.floor(Math.random() * 100) + 70); // random glucose values between 70 and 170
-      }
-      setGlucoseData(data);
-    };
-    generateRandomData();
+    fetchGlucoseData();
   }, []);
-
-  const handleProfilePress = () => {
-    navigation.navigate('Profile'); // Navigate to Profile screen
-  };
 
   const handleSignOut = async () => {
     try {
       await signOut(auth);
-      navigation.navigate('Login'); // Navigate back to the Login page
+      navigation.navigate('Login');
     } catch (error) {
       console.error('Sign out error:', error);
       Alert.alert('Error', 'Unable to sign out. Please try again.');
     }
   };
 
+  // Get recent data and timestamps for the last 5 readings
+  const recentGlucoseData = glucoseData.slice(-5);
+  const recentTimestamps = timestamps.slice(-5);
+
+  // Separate the dates and times for better chart presentation
+  const recentDate = moment(recentTimestamps[0]).format('MMM D, YYYY');  // Extract the common date
+  const recentTimes = recentTimestamps.map(ts => moment(ts).format('h:mm A')); // Extract times
+
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      {/* Logo and App Title */}
       <View style={styles.header}>
-        <Image source={require('./assets/logo.jpg')} style={styles.logo} /> {/* Change path if needed */}
-        <Text style={styles.appTitle}>Glucose Monitor</Text>
+        <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
+          <Text style={styles.signOutText}>Sign Out</Text>
+        </TouchableOpacity>
+        <Image source={require('./assets/logo.jpg')} style={styles.logo} />
+        <Text style={styles.appTitle}>SugarFit</Text>
       </View>
 
-      {/* Top Section with Profile and Sign-Out */}
-      <View style={styles.topButtons}>
-        <Button title="Profile" onPress={handleProfilePress} style={styles.profileButton} />
-        <Button title="Sign Out" onPress={handleSignOut} style={styles.signOutButton} />
+      {/* Stack of Options */}
+      <View style={styles.optionsContainer}>
+        <TouchableOpacity style={styles.optionButton} onPress={() => navigation.navigate('Profile')}>
+          <Text style={styles.optionText}>Profile</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.optionButton} onPress={() => navigation.navigate('DoctorAppointment')}>
+          <Text style={styles.optionText}>Doctor Appointment</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.optionButton} onPress={() => navigation.navigate('Info')}>
+          <Text style={styles.optionText}>Info</Text>
+        </TouchableOpacity>
       </View>
 
-      {/* Glucose Reading Section */}
-      <View style={styles.readingContainer}>
-        <View style={styles.glucoseReading}>
-          <Text style={styles.glucoseNumber}>112</Text>
-          <Text style={styles.unit}>mg/dL</Text>
-          {/* Added line indicating glucose level is normal */}
-          <Text style={styles.normalText}>Glucose level in range and normal</Text>
+      {isLoading ? (
+        <ActivityIndicator size="large" color="#0000ff" />
+      ) : recentGlucoseData.length > 0 ? (
+        <View style={styles.chartContainer}>
+          <Text style={styles.chartTitle}>Glucose Data</Text>
+
+          <LineChart
+            data={{
+              labels: recentTimes, // Display formatted times on x-axis
+              datasets: [{ data: recentGlucoseData }],
+            }}
+            width={Dimensions.get('window').width * 0.9}
+            height={220}
+            chartConfig={{
+              backgroundColor: '#e26a00',
+              backgroundGradientFrom: '#fb8c00',
+              backgroundGradientTo: '#ffa726',
+              decimalPlaces: 1, // Display 1 decimal place
+              color: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
+              labelColor: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
+              style: {
+                borderRadius: 16,
+              },
+              propsForDots: {
+                r: '6',
+                strokeWidth: '2',
+                stroke: '#ffa726',
+              },
+            }}
+            bezier
+            style={styles.chart}
+          />
+
+          {/* Display common date below the chart */}
+          <Text style={styles.commonDateText}>{recentDate}</Text>
+
+          <Text style={styles.predictionText}>
+            Last glucose value: {prediction.last_glucose_value}
+          </Text>
+          <Text style={styles.predictionText}>
+            Prediction 'Before Meals': {prediction.prediction_before}
+          </Text>
+          <Text style={styles.predictionText}>
+            Prediction 'After Meals': {prediction.prediction_after}
+          </Text>
         </View>
-        <View style={styles.trendArrow}>
-          <Text style={styles.trendText}>↗</Text>
-        </View>
-      </View>
-
-      {/* Graph Display Section */}
-      <View style={styles.graphContainer}>
-        <LineChart
-          data={{
-            labels: ['3PM', '4PM', '5PM', '6PM', '7PM', '8PM'], // Labels for the graph
-            datasets: [{ data: glucoseData }], // Random glucose data
-          }}
-          width={Dimensions.get('window').width - 40} // Graph width
-          height={220}
-          yAxisSuffix="mg/dL"
-          chartConfig={{
-            backgroundColor: '#E8F5E9',
-            backgroundGradientFrom: '#E8F5E9',
-            backgroundGradientTo: '#E8F5E9',
-            decimalPlaces: 1,
-            color: (opacity = 1) => `rgba(46, 125, 50, ${opacity})`, // Green color for the graph line
-            labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
-            style: { borderRadius: 16 },
-            propsForDots: { r: '4', strokeWidth: '2', stroke: '#2E7D32' },
-          }}
-          bezier
-          style={styles.chart}
-        />
-      </View>
-
-      {/* Add Note Section */}
-      <TouchableOpacity style={styles.addNoteButton} onPress={() => Alert.alert('Add Note Clicked')}>
-        <Text style={styles.addNoteText}>+ ADD NOTE</Text>
-      </TouchableOpacity>
-
-      {/* Sensor Info Section */}
-      <View style={styles.sensorInfoContainer}>
-        <Text style={styles.sensorInfoText}>SENSOR ENDS IN: 14 DAYS</Text>
-      </View>
+      ) : (
+        <Text>No data available</Text>
+      )}
     </ScrollView>
   );
 }
@@ -113,99 +191,77 @@ const styles = StyleSheet.create({
   header: {
     width: '100%',
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 20,
   },
   logo: {
     width: 40,
     height: 40,
-    marginRight: 10,
+    marginRight: 5,
   },
   appTitle: {
     fontSize: 22,
     fontWeight: 'bold',
     color: '#2E7D32',
   },
-  topButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '100%',
-    marginBottom: 20,
-  },
-  profileButton: {
-    marginRight: 10,
-  },
   signOutButton: {
-    marginLeft: 10,
+    padding: 10,
   },
-  readingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 30,
-    backgroundColor: '#E8F5E9',
-    padding: 15,
-    borderRadius: 10,
-    width: '100%',
-  },
-  glucoseReading: {
-    flexDirection: 'column',
-    alignItems: 'center',
-    marginRight: 10,
-  },
-  glucoseNumber: {
-    fontSize: 50,
+  signOutText: {
+    color: '#2E7D32',
     fontWeight: 'bold',
-    color: '#2E7D32',
   },
-  unit: {
-    fontSize: 18,
-    color: '#555',
-  },
-  normalText: {
-    fontSize: 16,
-    color: '#2E7D32',
-    marginTop: 5,
-  },
-  trendArrow: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  trendText: {
-    fontSize: 40,
-    color: '#2E7D32',
-  },
-  graphContainer: {
+  optionsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
     width: '100%',
-    backgroundColor: '#FFFFFF',
-    justifyContent: 'center',
-    alignItems: 'center',
     marginBottom: 20,
+  },
+  optionButton: {
+    padding: 10,
+    backgroundColor: '#2E7D32',
     borderRadius: 10,
-    paddingHorizontal: 10,
+    alignItems: 'center',
+    width: '30%',
+  },
+  optionText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  chartContainer: {
+    marginTop: 20,
+    padding: 10,
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.8,
+    shadowRadius: 2,
+    elevation: 5,
+    width: '100%',
+    alignItems: 'center',
+  },
+  chartTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 10,
+    textAlign: 'center',
   },
   chart: {
-    marginVertical: 8,
     borderRadius: 16,
   },
-  addNoteButton: {
-    backgroundColor: '#1976D2',
-    paddingVertical: 10,
-    paddingHorizontal: 40,
-    borderRadius: 30,
-    marginBottom: 20,
-  },
-  addNoteText: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  sensorInfoContainer: {
-    padding: 10,
-    marginBottom: 30,
-  },
-  sensorInfoText: {
-    color: '#555',
+  commonDateText: {
+    marginTop: 10,
     fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  predictionText: {
+    fontSize: 14,
+    marginTop: 10,
+    color: '#333',
   },
 });
+``
